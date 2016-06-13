@@ -434,9 +434,65 @@ static int d6_mcast_from_client_config_ifindex(struct d6_packet *packet, uint8_t
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x02,
 	};
 
+	#define _PATH_PROCNET_IFINET6   	"/proc/net/if_inet6"
+	#define IPV6_ADDR_LINKLOCAL     	0x0020U
+	#define IPV6_ADDR_SCOPE_MASK    	0x00f0U
+
+	FILE *f;
+	char addr6[40], devname[21];
+	struct sockaddr_in6 sap;
+	int plen, scope, dad_status, if_idx;
+	char addr6p[8][5];
+	int link_local_parsing_success = 0;
+
+	f = fopen_for_read(_PATH_PROCNET_IFINET6);
+	if (f == NULL){
+		log1("Could not find /proc/net/if_inet6, can't set link local addr, not sending package.");
+		return;
+	}
+	// cat /proc/net/if_inet6
+	// 00000000000000000000000000000001 01 80 10 80       lo
+	// 2401db000020a01eface000000230000 02 40 00 80     eth0
+	// fe8000000000000062eb69fffe9bb5c2 02 40 20 80     eth0
+	// Iterate over every one of those lines and extract the parts into variables
+	while (fscanf
+			   (f,"%4s%4s%4s%4s%4s%4s%4s%4s %08x %02x %02x %02x %20s\n",
+			addr6p[0], addr6p[1], addr6p[2], addr6p[3], addr6p[4],
+			addr6p[5], addr6p[6], addr6p[7], &if_idx, &plen, &scope,
+			&dad_status, devname) != EOF
+	) {
+		// check that it's the interface we're currently listening on
+		if (!strcmp(devname, client_config.interface)) {
+			// See if it's link-local. if not we don't care
+			// about it at this point
+			if ((scope & IPV6_ADDR_SCOPE_MASK) == IPV6_ADDR_LINKLOCAL) {
+				// Re-assemble the readable v6 address into addr6
+				sprintf(addr6, "%s:%s:%s:%s:%s:%s:%s:%s",
+						addr6p[0], addr6p[1], addr6p[2], addr6p[3],
+						addr6p[4], addr6p[5], addr6p[6], addr6p[7]);
+				log1("Found Link Local address for %s: %s", devname, addr6);
+				// Set the socket address to all zeros
+				memset(&sap, 0, sizeof(sap));
+				// Convert the printable v6 address to the binary equivalent
+				// and write it to the sockaddr_in6 struct into &sap.sin6_addr
+				inet_pton(AF_INET6, addr6, (struct sockaddr *) &sap.sin6_addr);
+				// Set the family to v6 just to have a proper data structure
+				sap.sin6_family = AF_INET6;
+				// Cool, we found what we're looking for. Our work here is done!
+				link_local_parsing_success = 1;
+				break;
+			}
+		}
+	}
+	fclose(f);
+
+	if (link_local_parsing_success == 0) {
+		log1("Could not find link local addr among interfaces, not sending package.");
+		return;
+	}
 	return d6_send_raw_packet(
 		packet, (end - (uint8_t*) packet),
-		/*src*/ NULL, CLIENT_PORT6,
+		/*src*/ (struct in6_addr*)&sap.sin6_addr, CLIENT_PORT6,
 		/*dst*/ (struct in6_addr*)FF02__1_2, SERVER_PORT6, MAC_BCAST_ADDR,
 		client_config.ifindex
 	);

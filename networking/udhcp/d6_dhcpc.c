@@ -31,6 +31,7 @@
 #include "dhcpc.h"
 #include "d6_common.h"
 
+#include <net/if.h>
 #include <netinet/if_ether.h>
 #include <netpacket/packet.h>
 #include <linux/filter.h>
@@ -439,7 +440,7 @@ static int d6_mcast_from_client_config_ifindex(struct d6_packet *packet, uint8_t
 	#define IPV6_ADDR_SCOPE_MASK    	0x00f0U
 
 	FILE *f;
-	char addr6[40], devname[21];
+	char addr6[40], devname[IFNAMSIZ];
 	struct sockaddr_in6 sap;
 	int plen, scope, dad_status, if_idx;
 	char addr6p[8][5];
@@ -487,8 +488,8 @@ static int d6_mcast_from_client_config_ifindex(struct d6_packet *packet, uint8_t
 	fclose(f);
 
 	if (link_local_parsing_success == 0) {
-		log1("Could not find link local addr among interfaces, not sending package.");
-		return;
+		log1("Could not find link local addr among interfaces.");
+		sap.sin6_addr = NULL;
 	}
 	return d6_send_raw_packet(
 		packet, (end - (uint8_t*) packet),

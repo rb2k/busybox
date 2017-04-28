@@ -91,7 +91,7 @@ static const char opt_req[] = {
 	0, 6,
 	(D6_OPT_DNS_SERVERS >> 8), (D6_OPT_DNS_SERVERS & 0xff),
 	(D6_OPT_DOMAIN_LIST >> 8), (D6_OPT_DOMAIN_LIST & 0xff),
-	(D6_OPT_CLIENT_FQDN >> 8), (D6_OPT_CLIENT_FQDN & 0xff)
+	(D6_OPT_CLIENT_FQDN >> 8), (D6_OPT_CLIENT_FQDN & 0xff),
 };
 
 static const char opt_fqdn_req[] = {
@@ -158,6 +158,7 @@ static void option_to_env(uint8_t *option, uint8_t *option_end)
 	int olen, ooff;
 	while (len_m4 >= 0) {
 		uint32_t v32;
+		char *url;
 		char ipv6str[sizeof("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff")];
 
 		if (option[0] != 0 || option[2] != 0)
@@ -251,6 +252,12 @@ static void option_to_env(uint8_t *option, uint8_t *option_end)
 
 			*new_env() = dlist;
 
+			break;
+		case D6_OPT_BOOTFILE_URL:
+			url = xzalloc(option[3] + 1);
+			memcpy(url, option + 4, option[3]);
+			*new_env() = xasprintf("ipv6bootfileurl=%s", url);
+			free(url);
 			break;
 		case D6_OPT_DOMAIN_LIST:
 			dlist = dname_dec(option + 4, (option[2] << 8) | option[3], "search=");
@@ -349,17 +356,132 @@ static uint8_t *init_d6_packet(struct d6_packet *packet, char type, uint32_t xid
 
 static uint8_t *add_d6_client_options(uint8_t *ptr)
 {
+	struct d6_option_set *option;
+	uint8_t *orig = ptr;
+	uint16_t *val = (uint16_t *)ptr;
+	int i, count = 0;;
+
+	/*
+	 * We want to fill out the options first and then go back and update the
+	 * option len for the packet, it looks like this
+	   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	   |           OPTION_ORO          |           option-len          |
+	   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	   |    requested-option-code-1    |    requested-option-code-2    |
+	   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	   |                              ...                              |
+	   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	 * So we just adjust ptr by 4 octets, fill in our options and then set the
+	 * option-len to 2 * # of opts, as per RFC 3315 Section 22.7.
+	 */
+	ptr += 4;
+	for (i = 1; i < D6_OPT_END; i++) {
+		if (client_config.opt_mask[i >> 3] & (1 << (i & 7))) {
+			uint16_t opt = htons(i);
+			bb_error_msg("requestion option %d", i);
+			ptr = d6_store_blob(ptr, &opt, sizeof(opt));
+			count++;
+		}
+	}
+
+	if (count) {
+		*val = htons(D6_OPT_ORO);
+		val++;
+		*val = htons(count * 2);
+	} else {
+		ptr = orig;
+	}
+
+	option = client6_data.options;
+	while (option) {
+		ptr = d6_store_blob(ptr, option->data, option->len);
+		option = option->next;
+	}
 	return ptr;
-	//uint8_t c;
-	//int i, end, len;
+}
 
-	/* Add a "param req" option with the list of options we'd like to have
-	 * from stubborn DHCP servers. Pull the data from the struct in common.c.
-	 * No bounds checking because it goes towards the head of the packet. */
-	//...
+struct d6_optstr {
+	const char *name;
+	uint16_t code;
+};
 
-	/* Add -x options if any */
-	//...
+static struct d6_optstr d6_option_strings[] = {
+	{ "userclass", D6_OPT_USER_CLASS },
+	{ NULL, 0 },
+};
+
+static uint16_t d6_optstr_to_code(char *optstr)
+{
+	struct d6_optstr *opt = d6_option_strings;
+
+	for (; opt->name; opt++) {
+		if (!strcmp(optstr, opt->name))
+			return opt->code;
+	}
+	return 0;
+}
+
+static void d6_str2optset(char *optstr)
+{
+	char *val;
+	uint8_t *ptr;
+	uint16_t code, tmp;
+	struct d6_option_set *new;
+
+	val = strchr(optstr, ':');
+	if (!val)
+		return;
+	*val = '\0';
+	val++;
+
+	code = bb_strtou(optstr, NULL, 0);
+	if (errno || code > 254 || !code) {
+		code = d6_optstr_to_code(optstr);
+		if (!code) {
+			bb_error_msg("unrecognized option %s", optstr);
+			return;
+		}
+	}
+
+	switch (code) {
+	case D6_OPT_USER_CLASS:
+/*   0                   1                   2                   3
+ *  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * |        OPTION_USER_CLASS      |          option-len           |
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * |          user class len       |                               |
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+      user class string        |
+ * |                                                               |
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * |                           ....                                |
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ */
+		new = xmalloc(sizeof(*new));
+		new->len = strlen(val) + sizeof(uint16_t) * 3;
+		new->data = ptr = xmalloc(new->len);
+
+		/* Store the code. */
+		code = htons(code);
+		ptr = d6_store_blob(ptr, &code, sizeof(code));
+
+		/* Length of the user data. */
+		tmp = htons(strlen(val) + sizeof(uint16_t));
+		ptr = d6_store_blob(ptr, &tmp, sizeof(tmp));
+
+		/* Length of the user class string. */
+		tmp = htons(strlen(val));
+		ptr = d6_store_blob(ptr, &tmp, sizeof(tmp));
+
+		/* The user class string. */
+		ptr = d6_store_blob(ptr, val, strlen(val));
+		new->next = client6_data.options;
+		client6_data.options = new;
+		break;
+	default:
+		bb_error_msg("unimplemented option %s", optstr);
+		break;
+	}
 }
 
 static int d6_mcast_from_client_config_ifindex(struct d6_packet *packet, uint8_t *end)

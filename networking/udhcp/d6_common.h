@@ -89,11 +89,22 @@ struct d6_option {
 
 #define D6_OPT_CLIENT_FQDN   39
 
+#define D6_OPT_BOOTFILE_URL  59
+#define D6_OPT_END           60
+
 /*** Other shared functions ***/
+
+
+struct d6_option_set {
+	uint8_t *data;
+	uint16_t len;
+	struct d6_option_set *next;
+ };
 
 struct client6_data_t {
 	struct d6_option *server_id;
 	struct d6_option *ia_na;
+	struct d6_option_set *options;
 	char **env_ptr;
 	unsigned env_idx;
 	/* link-local IPv6 address */

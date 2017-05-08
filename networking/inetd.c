@@ -153,6 +153,59 @@
  *                      setgid(specified group)
  *                      setuid()
  */
+//config:config INETD
+//config:	bool "inetd"
+//config:	default y
+//config:	select FEATURE_SYSLOG
+//config:	help
+//config:	  Internet superserver daemon
+//config:
+//config:config FEATURE_INETD_SUPPORT_BUILTIN_ECHO
+//config:	bool "Support echo service"
+//config:	default y
+//config:	depends on INETD
+//config:	help
+//config:	  Echo received data internal inetd service
+//config:
+//config:config FEATURE_INETD_SUPPORT_BUILTIN_DISCARD
+//config:	bool "Support discard service"
+//config:	default y
+//config:	depends on INETD
+//config:	help
+//config:	  Internet /dev/null internal inetd service
+//config:
+//config:config FEATURE_INETD_SUPPORT_BUILTIN_TIME
+//config:	bool "Support time service"
+//config:	default y
+//config:	depends on INETD
+//config:	help
+//config:	  Return 32 bit time since 1900 internal inetd service
+//config:
+//config:config FEATURE_INETD_SUPPORT_BUILTIN_DAYTIME
+//config:	bool "Support daytime service"
+//config:	default y
+//config:	depends on INETD
+//config:	help
+//config:	  Return human-readable time internal inetd service
+//config:
+//config:config FEATURE_INETD_SUPPORT_BUILTIN_CHARGEN
+//config:	bool "Support chargen service"
+//config:	default y
+//config:	depends on INETD
+//config:	help
+//config:	  Familiar character generator internal inetd service
+//config:
+//config:config FEATURE_INETD_RPC
+//config:	bool "Support RPC services"
+//config:	default n  # very rarely used, and needs Sun RPC support in libc
+//config:	depends on INETD
+//config:	select FEATURE_HAVE_RPC
+//config:	help
+//config:	  Support Sun-RPC based services
+
+//applet:IF_INETD(APPLET(inetd, BB_DIR_USR_SBIN, BB_SUID_DROP))
+
+//kbuild:lib-$(CONFIG_INETD) += inetd.o
 
 //usage:#define inetd_trivial_usage
 //usage:       "[-fe] [-q N] [-R N] [CONFFILE]"
@@ -160,9 +213,9 @@
 //usage:       "Listen for network connections and launch programs\n"
 //usage:     "\n	-f	Run in foreground"
 //usage:     "\n	-e	Log to stderr"
-//usage:     "\n	-q N	Socket listen queue (default: 128)"
+//usage:     "\n	-q N	Socket listen queue (default 128)"
 //usage:     "\n	-R N	Pause services after N connects/min"
-//usage:     "\n		(default: 0 - disabled)"
+//usage:     "\n		(default 0 - disabled)"
 
 #include <syslog.h>
 #include <sys/resource.h> /* setrlimit */
@@ -1153,8 +1206,8 @@ int inetd_main(int argc UNUSED_PARAM, char **argv)
 	if (real_uid != 0) /* run by non-root user */
 		config_filename = NULL;
 
-	opt_complementary = "R+:q+"; /* -q N, -R N */
-	opt = getopt32(argv, "R:feq:", &max_concurrency, &global_queuelen);
+	/* -q N, -R N */
+	opt = getopt32(argv, "R:+feq:+", &max_concurrency, &global_queuelen);
 	argv += optind;
 	//argc -= optind;
 	if (argv[0])
@@ -1624,7 +1677,7 @@ static uint32_t machtime(void)
 	struct timeval tv;
 
 	gettimeofday(&tv, NULL);
-	return htonl((uint32_t)(tv.tv_sec + 2208988800));
+	return htonl((uint32_t)(tv.tv_sec + 2208988800U));
 }
 /* ARGSUSED */
 static void FAST_FUNC machtime_stream(int s, servtab_t *sep UNUSED_PARAM)

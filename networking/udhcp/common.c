@@ -86,7 +86,7 @@ const struct dhcp_optflag dhcp_optflags[] = {
 };
 
 /* Used for converting options from incoming packets to env variables
- * for udhcpc stript, and for setting options for udhcpd via
+ * for udhcpc script, and for setting options for udhcpd via
  * "opt OPTION_NAME OPTION_VALUE" directives in udhcpd.conf file.
  */
 /* Must match dhcp_optflags[] order */
@@ -226,9 +226,12 @@ uint8_t* FAST_FUNC udhcp_get_option(struct dhcp_packet *packet, int code)
 	rem = sizeof(packet->options);
 	while (1) {
 		if (rem <= 0) {
+ complain:
 			bb_error_msg("bad packet, malformed option field");
 			return NULL;
 		}
+
+		/* DHCP_PADDING and DHCP_END have no [len] byte */
 		if (optionptr[OPT_CODE] == DHCP_PADDING) {
 			rem--;
 			optionptr++;
@@ -251,10 +254,13 @@ uint8_t* FAST_FUNC udhcp_get_option(struct dhcp_packet *packet, int code)
 			}
 			break;
 		}
+
+		if (rem <= OPT_LEN)
+			goto complain; /* complain and return NULL */
 		len = 2 + optionptr[OPT_LEN];
 		rem -= len;
 		if (rem < 0)
-			continue; /* complain and return NULL */
+			goto complain; /* complain and return NULL */
 
 		if (optionptr[OPT_CODE] == code) {
 			log_option("option found", optionptr);
@@ -262,7 +268,8 @@ uint8_t* FAST_FUNC udhcp_get_option(struct dhcp_packet *packet, int code)
 		}
 
 		if (optionptr[OPT_CODE] == DHCP_OPTION_OVERLOAD) {
-			overload |= optionptr[OPT_DATA];
+			if (len >= 3)
+				overload |= optionptr[OPT_DATA];
 			/* fall through */
 		}
 		optionptr += len;

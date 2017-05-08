@@ -11,6 +11,38 @@
  * the GPL, and is (c) 1995-1999 by:
  *     Geert Uytterhoeven (Geert.Uytterhoeven@cs.kuleuven.ac.be)
  */
+//config:config FBSET
+//config:	bool "fbset"
+//config:	default y
+//config:	select PLATFORM_LINUX
+//config:	help
+//config:	  fbset is used to show or change the settings of a Linux frame buffer
+//config:	  device. The frame buffer device provides a simple and unique
+//config:	  interface to access a graphics display. Enable this option
+//config:	  if you wish to enable the 'fbset' utility.
+//config:
+//config:config FEATURE_FBSET_FANCY
+//config:	bool "Enable extra options"
+//config:	default y
+//config:	depends on FBSET
+//config:	help
+//config:	  This option enables extended fbset options, allowing one to set the
+//config:	  framebuffer size, color depth, etc. interface to access a graphics
+//config:	  display. Enable this option if you wish to enable extended fbset
+//config:	  options.
+//config:
+//config:config FEATURE_FBSET_READMODE
+//config:	bool "Enable readmode support"
+//config:	default y
+//config:	depends on FBSET
+//config:	help
+//config:	  This option allows fbset to read the video mode database stored by
+//config:	  default as /etc/fb.modes, which can be used to set frame buffer
+//config:	  device to pre-defined video modes.
+
+//applet:IF_FBSET(APPLET(fbset, BB_DIR_USR_SBIN, BB_SUID_DROP))
+
+//kbuild:lib-$(CONFIG_FBSET) += fbset.o
 
 //usage:#define fbset_trivial_usage
 //usage:       "[OPTIONS] [MODE]"
@@ -164,6 +196,7 @@ static const struct cmdoptions_t {
 	const unsigned char code;
 } g_cmdoptions[] = {
 	/*"12345678" + NUL */
+//TODO: convert to index_in_strings()
 	{ "fb"      , 1, CMD_FB       },
 	{ "db"      , 1, CMD_DB       },
 	{ "a"       , 0, CMD_ALL      },
@@ -416,7 +449,7 @@ int fbset_main(int argc, char **argv)
 	unsigned options = 0;
 
 	const char *fbdev = DEFAULTFBDEV;
-	const char *modefile = DEFAULTFBMODE;
+	IF_FEATURE_FBSET_READMODE(const char *modefile = DEFAULTFBMODE;)
 	char *thisarg;
 	char *mode = mode; /* for compiler */
 
@@ -444,7 +477,7 @@ int fbset_main(int argc, char **argv)
 				fbdev = argv[1];
 				break;
 			case CMD_DB:
-				modefile = argv[1];
+				IF_FEATURE_FBSET_READMODE(modefile = argv[1];)
 				break;
 			case CMD_ALL:
 				options |= OPT_ALL;

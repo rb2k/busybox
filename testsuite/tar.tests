@@ -24,7 +24,7 @@ tar: short read
 "" ""
 SKIP=
 
-optional FEATURE_SEAMLESS_GZ
+optional FEATURE_SEAMLESS_GZ GUNZIP
 # In NOMMU case, "invalid magic" message comes from gunzip child process.
 # Otherwise, it comes from tar.
 # Need to fix output up to avoid false positive.
@@ -204,7 +204,7 @@ SKIP=
 
 # Had a bug where on extract autodetect first "switched off" -z
 # and then failed to recognize .tgz extension
-optional FEATURE_TAR_CREATE FEATURE_SEAMLESS_GZ
+optional FEATURE_TAR_CREATE FEATURE_SEAMLESS_GZ GUNZIP
 testing "tar extract tgz" "\
 dd count=1 bs=1M if=/dev/zero of=F0 2>/dev/null
 tar -czf F0.tgz F0
@@ -266,7 +266,7 @@ SKIP=
 # The correct implementation unlinks target before
 # creating the second file.
 # We test that /tmp/passwd remains empty:
-optional UUDECODE FEATURE_SEAMLESS_BZ2
+optional UUDECODE FEATURE_TAR_AUTODETECT FEATURE_SEAMLESS_BZ2
 testing "tar does not extract into symlinks" "\
 >>/tmp/passwd && uudecode -o input && tar xf input 2>&1 && rm passwd; cat /tmp/passwd; echo \$?
 " "\
@@ -282,7 +282,7 @@ l4/V8LDoe90yiWJhOJvIypgEfxdyRThQkBVn/bI=
 "
 SKIP=
 # And same with -k
-optional UUDECODE FEATURE_SEAMLESS_BZ2
+optional UUDECODE FEATURE_TAR_AUTODETECT FEATURE_SEAMLESS_BZ2
 testing "tar -k does not extract into symlinks" "\
 >>/tmp/passwd && uudecode -o input && tar xf input -k 2>&1 && rm passwd; cat /tmp/passwd; echo \$?
 " "\
@@ -297,6 +297,26 @@ DGllrjs20ATUgR1HmccBX3EhoMnpMJaNyggmxgLDMz54lBnBTJO/1L1lbMS4
 l4/V8LDoe90yiWJhOJvIypgEfxdyRThQkBVn/bI=
 ====
 "
+SKIP=
+
+optional UNICODE_SUPPORT FEATURE_TAR_GNU_EXTENSIONS FEATURE_SEAMLESS_BZ2 FEATURE_TAR_AUTODETECT
+testing "Pax-encoded UTF8 names and symlinks" '\
+tar xvf ../tar.utf8.tar.bz2 2>&1; echo $?
+export LANG=en_US.UTF-8
+ls -l etc/ssl/certs/* | sed "s:.*etc/:etc/:" | sort
+unset LANG
+rm -rf etc usr
+' "\
+etc/ssl/certs/3b2716e5.0
+etc/ssl/certs/EBG_Elektronik_Sertifika_Hizmet_Sağlayıcısı.pem
+etc/ssl/certs/f80cc7f6.0
+usr/share/ca-certificates/mozilla/EBG_Elektronik_Sertifika_Hizmet_Sağlayıcısı.crt
+0
+etc/ssl/certs/3b2716e5.0 -> EBG_Elektronik_Sertifika_Hizmet_Sağlayıcısı.pem
+etc/ssl/certs/EBG_Elektronik_Sertifika_Hizmet_Sağlayıcısı.pem -> /usr/share/ca-certificates/mozilla/EBG_Elektronik_Sertifika_Hizmet_Sağlayıcısı.crt
+etc/ssl/certs/f80cc7f6.0 -> EBG_Elektronik_Sertifika_Hizmet_Sağlayıcısı.pem
+" \
+"" ""
 SKIP=
 
 

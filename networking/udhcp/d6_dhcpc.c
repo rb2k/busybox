@@ -547,7 +547,6 @@ static int d6_mcast_from_client_config_ifindex(struct d6_packet *packet, uint8_t
 
 	if (link_local_parsing_success == 0) {
 		log1("Could not find link local addr among interfaces.");
-		sap.sin6_addr = NULL;
 	}
 	return d6_send_raw_packet(
 		packet, (end - (uint8_t*) packet),

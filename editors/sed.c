@@ -337,7 +337,7 @@ static int get_address(const char *my_str, int *linenum, regex_t ** regex)
 
 	if (isdigit(*my_str)) {
 		*linenum = strtol(my_str, (char**)&pos, 10);
-		/* endstr shouldnt ever equal NULL */
+		/* endstr shouldn't ever equal NULL */
 	} else if (*my_str == '$') {
 		*linenum = -1;
 		pos++;
@@ -444,7 +444,7 @@ static int parse_subst_cmd(sed_cmd_t *sed_cmd, const char *substr)
 			free(fname);
 			break;
 		}
-		/* Ignore case (gnu exension) */
+		/* Ignore case (gnu extension) */
 		case 'i':
 		case 'I':
 			cflags |= REG_ICASE;
@@ -587,7 +587,7 @@ static const char *parse_cmd_args(sed_cmd_t *sed_cmd, const char *cmdstr)
 		free(match);
 		free(replace);
 	}
-	/* if it wasnt a single-letter command that takes no arguments
+	/* if it wasn't a single-letter command that takes no arguments
 	 * then it must be an invalid command.
 	 */
 	else if (idx >= IDX_nul) { /* not d,D,g,G,h,H,l,n,N,p,P,q,x,=,{,} */
@@ -751,7 +751,7 @@ static void do_subst_w_backrefs(char *line, char *replace)
 				continue;
 			}
 			/* I _think_ it is impossible to get '\' to be
-			 * the last char in replace string. Thus we dont check
+			 * the last char in replace string. Thus we don't check
 			 * for replace[i] == NUL. (counterexample anyone?) */
 			/* if we find a backslash escaped character, print the character */
 			pipe_putc(replace[i]);
@@ -892,7 +892,10 @@ static sed_cmd_t *branch_to(char *label)
 	sed_cmd_t *sed_cmd;
 
 	for (sed_cmd = G.sed_cmd_head; sed_cmd; sed_cmd = sed_cmd->next) {
-		if (sed_cmd->cmd == ':' && sed_cmd->string && !strcmp(sed_cmd->string, label)) {
+		if (sed_cmd->cmd == ':'
+		 && sed_cmd->string
+		 && strcmp(sed_cmd->string, label) == 0
+		) {
 			return sed_cmd;
 		}
 	}
@@ -956,13 +959,22 @@ static void puts_maybe_newline(char *s, FILE *file, char *last_puts_char, char l
 	*last_puts_char = lpc;
 }
 
-static void flush_append(char *last_puts_char, char last_gets_char)
+static void flush_append(char *last_puts_char)
 {
 	char *data;
 
 	/* Output appended lines. */
-	while ((data = (char *)llist_pop(&G.append_head))) {
-		puts_maybe_newline(data, G.nonstdout, last_puts_char, last_gets_char);
+	while ((data = (char *)llist_pop(&G.append_head)) != NULL) {
+		/* Append command does not respect "nonterminated-ness"
+		 * of last line. Try this:
+		 * $ echo -n "woot" | sed -e '/woot/a woo' -
+		 * woot
+		 * woo
+		 * (both lines are terminated with \n)
+		 * Therefore we do not propagate "last_gets_char" here,
+		 * pass '\n' instead:
+		 */
+		puts_maybe_newline(data, G.nonstdout, last_puts_char, '\n');
 		free(data);
 	}
 }
@@ -970,13 +982,13 @@ static void flush_append(char *last_puts_char, char last_gets_char)
 /* Get next line of input from G.input_file_list, flushing append buffer and
  * noting if we ran out of files without a newline on the last line we read.
  */
-static char *get_next_line(char *gets_char, char *last_puts_char, char last_gets_char)
+static char *get_next_line(char *gets_char, char *last_puts_char)
 {
 	char *temp = NULL;
 	int len;
 	char gc;
 
-	flush_append(last_puts_char, last_gets_char);
+	flush_append(last_puts_char);
 
 	/* will be returned if last line in the file
 	 * doesn't end with either '\n' or '\0' */
@@ -1054,7 +1066,7 @@ static void process_files(void)
 	int substituted;
 
 	/* Prime the pump */
-	next_line = get_next_line(&next_gets_char, &last_puts_char, '\n' /*last_gets_char*/);
+	next_line = get_next_line(&next_gets_char, &last_puts_char);
 
 	/* Go through every line in each file */
  again:
@@ -1068,7 +1080,7 @@ static void process_files(void)
 
 	/* Read one line in advance so we can act on the last line,
 	 * the '$' address */
-	next_line = get_next_line(&next_gets_char, &last_puts_char, last_gets_char);
+	next_line = get_next_line(&next_gets_char, &last_puts_char);
 	linenum++;
 
 	/* For every line, go through all the commands */
@@ -1291,16 +1303,17 @@ static void process_files(void)
 		case 'n':
 			if (!G.be_quiet)
 				sed_puts(pattern_space, last_gets_char);
-			if (next_line) {
-				free(pattern_space);
-				pattern_space = next_line;
-				last_gets_char = next_gets_char;
-				next_line = get_next_line(&next_gets_char, &last_puts_char, last_gets_char);
-				substituted = 0;
-				linenum++;
-				break;
+			if (next_line == NULL) {
+				/* If no next line, jump to end of script and exit. */
+				goto discard_line;
 			}
-			/* fall through */
+			free(pattern_space);
+			pattern_space = next_line;
+			last_gets_char = next_gets_char;
+			next_line = get_next_line(&next_gets_char, &last_puts_char);
+			substituted = 0;
+			linenum++;
+			break;
 
 		/* Quit.  End of script, end of input. */
 		case 'q':
@@ -1331,7 +1344,7 @@ static void process_files(void)
 			pattern_space[len] = '\n';
 			strcpy(pattern_space + len+1, next_line);
 			last_gets_char = next_gets_char;
-			next_line = get_next_line(&next_gets_char, &last_puts_char, last_gets_char);
+			next_line = get_next_line(&next_gets_char, &last_puts_char);
 			linenum++;
 			break;
 		}
@@ -1435,7 +1448,7 @@ static void process_files(void)
 
 	/* Delete and such jump here. */
  discard_line:
-	flush_append(&last_puts_char, last_gets_char);
+	flush_append(&last_puts_char /*,last_gets_char*/);
 	free(pattern_space);
 
 	goto again;
@@ -1494,8 +1507,7 @@ int sed_main(int argc UNUSED_PARAM, char **argv)
 	/* do normal option parsing */
 	opt_e = opt_f = NULL;
 	opt_i = NULL;
-	opt_complementary = "e::f::" /* can occur multiple times */
-	                    "nn"; /* count -n */
+	opt_complementary = "nn"; /* count -n */
 
 	IF_LONG_OPTS(applet_long_options = sed_longopts);
 
@@ -1504,7 +1516,7 @@ int sed_main(int argc UNUSED_PARAM, char **argv)
 	 * GNU sed 4.2.1 mentions it in neither --help
 	 * nor manpage, but does recognize it.
 	 */
-	opt = getopt32(argv, "i::rEne:f:", &opt_i, &opt_e, &opt_f,
+	opt = getopt32(argv, "i::rEne:*f:*", &opt_i, &opt_e, &opt_f,
 			    &G.be_quiet); /* counter for -n */
 	//argc -= optind;
 	argv += optind;
